@@ -1,0 +1,13 @@
+{
+  "name": "server",
+  "version": "0.1.0",
+  "description": "",
+  "main": "index.js",
+  "private": true,
+  "scripts": {},
+  "author": "Liang <liang@maichong.it> (https://github.com/liangxingchen)",
+  "dependencies": {
+    "bson": "^4.0.3",
+    "mongodb": "^3.5.2"
+  }
+}
