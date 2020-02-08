@@ -2,6 +2,13 @@ import events = require("events");
 
 declare namespace MongoChangeHubClient {
   class Watcher extends events.EventEmitter {
+    id: string;
+    db: string;
+    collection: string;
+    filters: any;
+    client: MongoChangeHubClient;
+    count: number;
+
     addListener(event: "change", fn: (change: any) => void): this;
     addListener(event: "close", fn: () => void): this;
 
@@ -31,7 +38,11 @@ declare namespace MongoChangeHubClient {
 
 declare class MongoChangeHubClient {
   constructor(options: MongoChangeHubClient.Options);
-  watch(collection: string, filters?: any): MongoChangeHubClient.Watcher;
+  watch(
+    db: string,
+    collection: string,
+    filters?: any
+  ): MongoChangeHubClient.Watcher;
 }
 
 export = MongoChangeHubClient;

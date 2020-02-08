@@ -1,6 +1,6 @@
 {
   "name": "mongo-change-hub-client",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "MongoDB change hub client",
   "main": "index.js",
   "types": "index.d.js",

@@ -1,5 +1,4 @@
 const URI = process.env.URI || error("env URI is required!");
-const DB = process.env.DB || error("env DB is required!");
 
 const net = require("net");
 const bson = require("bson");
@@ -69,25 +68,57 @@ function isPlainObject(input) {
   return prototype === null || prototype === Object.getPrototypeOf({});
 }
 
+function objectToBuffer(object) {
+  let buffer = bson.serialize(object);
+  buffer = Buffer.concat([Buffer.allocUnsafe(4), buffer, endBuffer]);
+  buffer.writeInt32LE(buffer.length);
+  return buffer;
+}
+
 const server = net.createServer();
+
+/**
+ * @type Map<string,net.Socket>
+ */
 const clients = new Map();
+/**
+ * @type Map<string,Watcher>
+ */
 const watchers = new Map();
+/**
+ * @type Map<string,Stream>
+ */
 const streams = new Map();
 
 mongodb
   .connect(URI, {
     useUnifiedTopology: true
   })
-  .then(client => {
-    const db = client.db(DB);
-
+  .then(mongoClient => {
+    /**
+     * @param {net.Socket} client
+     * @param {{db:string; collection:string; watcher:string;}} action
+     */
     function watch(client, action) {
-      if (!action.collection || !action.watcher) {
-        client.close();
-        return;
+      for (let key of ["watcher", "db", "collection"]) {
+        if (!action[key]) {
+          return client.end(
+            objectToBuffer({ error: `Missing params: ${key}` })
+          );
+        }
+        if (typeof action[key] !== "string") {
+          return client.end(
+            objectToBuffer({ error: `Params type must be string: ${key}` })
+          );
+        }
       }
       const filters = action.filters || {};
-      console.log(client.remoteAddress, "watch", action.collection, filters);
+      console.log(
+        client.remoteAddress,
+        "watch",
+        `${action.db}.${action.collection}`,
+        filters
+      );
       let stream;
       for (let s of streams.values()) {
         if (s.collection === action.collection && compare(filters, s.filters)) {
@@ -97,12 +128,17 @@ mongodb
       }
 
       if (!stream) {
-        stream = new Stream(db, action.collection, filters);
+        stream = new Stream(
+          mongoClient.db(action.db),
+          action.collection,
+          filters
+        );
         streams.set(stream.id, stream);
       }
 
       const watcher = new Watcher(
         action.watcher,
+        action.db,
         action.collection,
         filters,
         client,
@@ -115,17 +151,25 @@ mongodb
       stream.start();
     }
 
+    /**
+     * @param {net.Socket} client
+     * @param {{watcher:string;}} action
+     */
     function cancel(client, action) {
       if (!action.watcher) {
-        client.close();
-        return;
+        return client.end(objectToBuffer({ error: "Missing params: watcher" }));
+      }
+      if (typeof action.watcher !== "string") {
+        return client.end(
+          objectToBuffer({ error: "Params type must be string: watcher" })
+        );
       }
       let watcher = watchers.get(action.watcher);
       if (!watcher) return;
       console.log(
         client.remoteAddress,
         "cancel",
-        watcher.collection,
+        `${watcher.db}.${watcher.collection}`,
         watcher.filters
       );
 
@@ -143,6 +187,8 @@ mongodb
           watch(client, data);
         } else if (data.action === "cancel") {
           cancel(client, data);
+        } else {
+          client.end(objectToBuffer({ error: "Unknown action" }));
         }
       });
 
@@ -164,18 +210,37 @@ mongodb
   .catch(error);
 
 class Stream {
+  /**
+   * @param {mongodb.Db} db
+   * @param {string} collection
+   * @param {any} filters
+   */
   constructor(db, collection, filters) {
+    /**
+     * @type string
+     */
     this.id = String(new bson.ObjectID());
     this.db = db;
     this.collection = collection;
     this.filters = filters;
+    /**
+     * @type Map<string,Watcher>
+     */
     this.watchers = new Map();
+    /**
+     * @type mongodb.ChangeStream
+     */
+    this.changeStream = null;
   }
 
   start() {
     if (this.changeStream) return;
 
-    console.log("start", this.collection, this.filters);
+    console.log(
+      "start",
+      `${this.db.databaseName}.${this.collection}`,
+      this.filters
+    );
     let pipeline = [];
     if (Object.keys(this.filters).length) {
       pipeline.push({ $match: filtersToMatch(this.filters) });
@@ -188,17 +253,18 @@ class Stream {
     this.changeStream.on("change", data => {
       for (let watcher of this.watchers.values()) {
         let change = { watcher: watcher.id, data };
-        let buffer = bson.serialize(change);
-        buffer = Buffer.concat([Buffer.allocUnsafe(4), buffer, endBuffer]);
-        buffer.writeInt32LE(buffer.length);
-        watcher.client.write(buffer);
+        watcher.client.write(objectToBuffer(change));
       }
     });
   }
 
   stop() {
     if (!this.changeStream) return;
-    console.log("stop", this.collection, this.filters);
+    console.log(
+      "stop",
+      `${this.db.databaseName}.${this.collection}`,
+      this.filters
+    );
     this.changeStream.close();
     this.changeStream.removeAllListeners();
     this.changeStream = null;
@@ -207,8 +273,17 @@ class Stream {
 }
 
 class Watcher {
-  constructor(id, collection, filters, client, stream) {
+  /**
+   * @param {string} id
+   * @param {string} db
+   * @param {string} collection
+   * @param {any} filters
+   * @param {net.Socket} client
+   * @param {Stream} stream
+   */
+  constructor(id, db, collection, filters, client, stream) {
     this.id = id;
+    this.db = db;
     this.collection = collection;
     this.filters = filters;
     this.client = client;

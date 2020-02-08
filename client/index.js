@@ -2,14 +2,36 @@ const net = require("net");
 const events = require("events");
 const bson = require("bson");
 
-module.exports = class Client {
+class Client {
   constructor(options) {
+    /**
+     * @type any
+     */
     this.options = options;
+    /**
+     * @type Map<string,Watcher>
+     */
     this.watchers = new Map();
+    /**
+     * @type Buffer
+     */
     this.buffer = null;
+    /**
+     * @type net.Socket
+     */
+    this.socket = null;
+    /**
+     * @type boolean
+     */
+    this.connected = false;
   }
 
-  watch(collection, filters) {
+  /**
+   * @param {string} db
+   * @param {string} collection
+   * @param {any} filters
+   */
+  watch(db, collection, filters) {
     if (!this.socket) {
       this._connect();
     }
@@ -17,15 +39,16 @@ module.exports = class Client {
 
     for (let watcher of this.watchers.values()) {
       if (
+        watcher.db === db &&
         watcher.collection === collection &&
         compare(filters, watcher.filters)
       ) {
-        watcher.clientCount += 1;
+        watcher.count += 1;
         return watcher;
       }
     }
 
-    let watcher = new Watcher(collection, filters, this);
+    let watcher = new Watcher(db, collection, filters, this);
 
     this.watchers.set(watcher.id, watcher);
 
@@ -54,6 +77,7 @@ module.exports = class Client {
     this.socket.on("close", () => {
       this.socket.destroy();
       this.socket = null;
+      this.connected = false;
       setTimeout(() => {
         if (!this.socket) {
           this._connect();
@@ -84,17 +108,28 @@ module.exports = class Client {
       this.buffer = this.buffer.slice(length);
     }
     let data = bson.deserialize(buffer);
+    if (data.error) {
+      console.error(`Mongo change hub error: ${data.error}`);
+      return;
+    }
     let watcher = this.watchers.get(data.watcher);
     if (watcher) {
       watcher.emit("change", data.data);
     }
   }
-};
+}
 
 class Watcher extends events.EventEmitter {
-  constructor(collection, filters, client) {
+  /**
+   * @param {string} db
+   * @param {string} collection
+   * @param {any} filters
+   * @param {Client} client
+   */
+  constructor(db, collection, filters, client) {
     super();
     this.id = String(new bson.ObjectID());
+    this.db = db;
     this.collection = collection;
     this.filters = filters;
     this.client = client;
@@ -106,6 +141,7 @@ class Watcher extends events.EventEmitter {
       bson.serialize({
         watcher: this.id,
         action: "watch",
+        db: this.db,
         collection: this.collection,
         filters: this.filters
       })
@@ -169,3 +205,5 @@ function isPlainObject(input) {
   const prototype = Object.getPrototypeOf(input);
   return prototype === null || prototype === Object.getPrototypeOf({});
 }
+
+module.exports = Client;
