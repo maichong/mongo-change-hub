@@ -3,7 +3,7 @@ const URI = process.env.URI || error("env URI is required!");
 const net = require("net");
 const bson = require("bson");
 const mongodb = require("mongodb");
-const endBuffer = Buffer.from("\n\n");
+const PacketWrapper = require("packet-wrapper");
 
 function error(msg) {
   console.error(msg);
@@ -69,10 +69,7 @@ function isPlainObject(input) {
 }
 
 function objectToBuffer(object) {
-  let buffer = bson.serialize(object);
-  buffer = Buffer.concat([Buffer.allocUnsafe(4), buffer, endBuffer]);
-  buffer.writeInt32LE(buffer.length);
-  return buffer;
+  return PacketWrapper.encode(bson.serialize(object));
 }
 
 const server = net.createServer();
@@ -180,15 +177,26 @@ mongodb
       console.log("new client", client.remoteAddress);
       client.id = String(new bson.ObjectID());
       clients.set(client.id, client);
+      const buffer = new PacketWrapper();
 
-      client.on("data", buffer => {
-        const data = bson.deserialize(buffer);
-        if (data.action === "watch") {
-          watch(client, data);
-        } else if (data.action === "cancel") {
-          cancel(client, data);
-        } else {
-          client.end(objectToBuffer({ error: "Unknown action" }));
+      client.on("data", chunk => {
+        buffer.addChunk(chunk);
+        let packet;
+        let data;
+        while ((packet = buffer.read())) {
+          try {
+            data = bson.deserialize(packet);
+          } catch (e) {
+            client.end(objectToBuffer({ error: "Invalid packet" }));
+            return;
+          }
+          if (data.action === "watch") {
+            watch(client, data);
+          } else if (data.action === "cancel") {
+            cancel(client, data);
+          } else {
+            client.end(objectToBuffer({ error: "Unknown action" }));
+          }
         }
       });
 

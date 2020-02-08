@@ -1,6 +1,7 @@
 const net = require("net");
 const events = require("events");
 const bson = require("bson");
+const PacketWrapper = require("packet-wrapper");
 
 class Client {
   constructor(options) {
@@ -13,9 +14,9 @@ class Client {
      */
     this.watchers = new Map();
     /**
-     * @type Buffer
+     * @type PacketWrapper
      */
-    this.buffer = null;
+    this.buffer = new PacketWrapper();
     /**
      * @type net.Socket
      */
@@ -61,7 +62,6 @@ class Client {
 
   _connect() {
     if (this.socket) return;
-    this.buffer = null;
     this.socket = net.connect(
       this.options.port || 37017,
       this.options.host,
@@ -88,34 +88,21 @@ class Client {
       console.error(error);
     });
 
-    this.socket.on("data", buffer => {
-      if (this.buffer) {
-        this.buffer = Buffer.concat([this.buffer, buffer]);
-      } else {
-        this.buffer = buffer;
+    this.socket.on("data", chunk => {
+      this.buffer.addChunk(chunk);
+      let buffer;
+      while ((buffer = this.buffer.read())) {
+        let data = bson.deserialize(buffer);
+        if (data.error) {
+          console.error(`Mongo change hub error: ${data.error}`);
+          continue;
+        }
+        let watcher = this.watchers.get(data.watcher);
+        if (watcher) {
+          watcher.emit("change", data.data);
+        }
       }
-      this._decode();
     });
-  }
-
-  _decode() {
-    let length = this.buffer.readInt32LE();
-    if (this.buffer.length < length) return;
-    let buffer = this.buffer.slice(4, length - 2);
-    if (this.buffer.length === length) {
-      this.buffer = null;
-    } else {
-      this.buffer = this.buffer.slice(length);
-    }
-    let data = bson.deserialize(buffer);
-    if (data.error) {
-      console.error(`Mongo change hub error: ${data.error}`);
-      return;
-    }
-    let watcher = this.watchers.get(data.watcher);
-    if (watcher) {
-      watcher.emit("change", data.data);
-    }
   }
 }
 
@@ -138,13 +125,15 @@ class Watcher extends events.EventEmitter {
 
   watch() {
     this.client.socket.write(
-      bson.serialize({
-        watcher: this.id,
-        action: "watch",
-        db: this.db,
-        collection: this.collection,
-        filters: this.filters
-      })
+      PacketWrapper.encode(
+        bson.serialize({
+          watcher: this.id,
+          action: "watch",
+          db: this.db,
+          collection: this.collection,
+          filters: this.filters
+        })
+      )
     );
   }
 
@@ -152,10 +141,12 @@ class Watcher extends events.EventEmitter {
     this.count -= 1;
     if (this.count > 0) return;
     this.client.socket.write(
-      bson.serialize({
-        watcher: this.id,
-        action: "cancel"
-      })
+      PacketWrapper.encode(
+        bson.serialize({
+          watcher: this.id,
+          action: "cancel"
+        })
+      )
     );
     this.client.watchers.delete(this.id);
     this.client = null;

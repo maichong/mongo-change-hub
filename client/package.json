@@ -1,6 +1,6 @@
 {
   "name": "mongo-change-hub-client",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "MongoDB change hub client",
   "main": "index.js",
   "types": "index.d.js",
@@ -8,6 +8,7 @@
   "author": "Liang <liang@maichong.it> (https://github.com/liangxingchen)",
   "license": "MIT",
   "dependencies": {
-    "bson": "^4.0.3"
+    "bson": "^4.0.3",
+    "packet-wrapper": "^0.1.0"
   }
 }

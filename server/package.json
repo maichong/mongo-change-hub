@@ -8,6 +8,7 @@
   "author": "Liang <liang@maichong.it> (https://github.com/liangxingchen)",
   "dependencies": {
     "bson": "^4.0.3",
-    "mongodb": "^3.5.2"
+    "mongodb": "^3.5.2",
+    "packet-wrapper": "^0.1.0"
   }
 }
