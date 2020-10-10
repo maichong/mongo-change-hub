@@ -1,10 +1,10 @@
-FROM maichong/node:12.13.0
+FROM node:12.19.0-alpine3.12
 
 WORKDIR /app
 
 COPY . /app
 
-RUN yarn install --production --ignore-optional
+RUN npm install
 
 CMD node index.js
 

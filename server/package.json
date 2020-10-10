@@ -7,8 +7,8 @@
   "scripts": {},
   "author": "Liang <liang@maichong.it> (https://github.com/liangxingchen)",
   "dependencies": {
-    "bson": "^4.0.3",
-    "mongodb": "^3.5.2",
+    "bson": "^1.1.4",
+    "mongodb": "^3.6.2",
     "packet-wrapper": "^0.1.0"
   }
 }

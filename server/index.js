@@ -1,9 +1,10 @@
 const URI = process.env.URI || error("env URI is required!");
 
 const net = require("net");
-const bson = require("bson");
+const BSON = require("bson");
 const mongodb = require("mongodb");
 const PacketWrapper = require("packet-wrapper");
+const bson = new BSON();
 
 function error(msg) {
   console.error(msg);
@@ -89,9 +90,9 @@ const streams = new Map();
 
 mongodb
   .connect(URI, {
-    useUnifiedTopology: true
+    useUnifiedTopology: true,
   })
-  .then(mongoClient => {
+  .then((mongoClient) => {
     /**
      * @param {net.Socket} client
      * @param {{db:string; collection:string; watcher:string;}} action
@@ -173,13 +174,13 @@ mongodb
       watcher.cancel();
     }
 
-    server.on("connection", client => {
+    server.on("connection", (client) => {
       console.log("new client", client.remoteAddress);
-      client.id = String(new bson.ObjectID());
+      client.id = String(new BSON.ObjectID());
       clients.set(client.id, client);
       const buffer = new PacketWrapper();
 
-      client.on("data", chunk => {
+      client.on("data", (chunk) => {
         buffer.addChunk(chunk);
         let packet;
         let data;
@@ -227,7 +228,7 @@ class Stream {
     /**
      * @type string
      */
-    this.id = String(new bson.ObjectID());
+    this.id = String(new BSON.ObjectID());
     this.db = db;
     this.collection = collection;
     this.filters = filters;
@@ -255,10 +256,10 @@ class Stream {
     }
     this.changeStream = this.db.collection(this.collection).watch(pipeline, {
       fullDocument: "updateLookup",
-      batchSize: 100
+      batchSize: 100,
     });
 
-    this.changeStream.on("change", data => {
+    this.changeStream.on("change", (data) => {
       for (let watcher of this.watchers.values()) {
         let change = { watcher: watcher.id, data };
         watcher.client.write(objectToBuffer(change));

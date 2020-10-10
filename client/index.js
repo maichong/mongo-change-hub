@@ -1,7 +1,8 @@
 const net = require("net");
 const events = require("events");
-const bson = require("bson");
+const BSON = require("bson");
 const PacketWrapper = require("packet-wrapper");
+const bson = new BSON();
 
 class Client {
   constructor(options) {
@@ -84,11 +85,11 @@ class Client {
         }
       }, 2000);
     });
-    this.socket.on("error", error => {
+    this.socket.on("error", (error) => {
       console.error(error);
     });
 
-    this.socket.on("data", chunk => {
+    this.socket.on("data", (chunk) => {
       this.buffer.addChunk(chunk);
       let buffer;
       while ((buffer = this.buffer.read())) {
@@ -115,7 +116,7 @@ class Watcher extends events.EventEmitter {
    */
   constructor(db, collection, filters, client) {
     super();
-    this.id = String(new bson.ObjectID());
+    this.id = String(new BSON.ObjectID());
     this.db = db;
     this.collection = collection;
     this.filters = filters;
@@ -131,7 +132,7 @@ class Watcher extends events.EventEmitter {
           action: "watch",
           db: this.db,
           collection: this.collection,
-          filters: this.filters
+          filters: this.filters,
         })
       )
     );
@@ -144,7 +145,7 @@ class Watcher extends events.EventEmitter {
       PacketWrapper.encode(
         bson.serialize({
           watcher: this.id,
-          action: "cancel"
+          action: "cancel",
         })
       )
     );
